@@ -1,0 +1,536 @@
+<html><head><base href="https://websim-engine.com/" target="_blank"><style>
+body {
+  font-family: Arial, sans-serif;
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+  margin: 0;
+  padding: 20px;
+}
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  background-color: #2a2a2a;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+h1, h2, h3 {
+  color: #4CAF50;
+}
+.chart {
+  width: 100%;
+  height: 400px;
+  background-color: #333;
+  border-radius: 5px;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.price-line {
+  stroke: #4CAF50;
+  stroke-width: 2;
+  fill: none;
+}
+.ma-short {
+  stroke: #FFA500;
+  stroke-width: 1.5;
+  fill: none;
+}
+.ma-long {
+  stroke: #3498db;
+  stroke-width: 1.5;
+  fill: none;
+}
+.rsi-line {
+  stroke: #FF69B4;
+  stroke-width: 1.5;
+  fill: none;
+}
+.bb-upper, .bb-middle, .bb-lower {
+  stroke-width: 1;
+  fill: none;
+}
+.bb-upper, .bb-lower {
+  stroke: #FF69B4;
+  stroke-dasharray: 5,5;
+}
+.bb-middle {
+  stroke: #FF69B4;
+}
+.buy-signal, .sell-signal {
+  fill: none;
+  stroke-width: 2;
+}
+.buy-signal {
+  stroke: #4CAF50;
+}
+.sell-signal {
+  stroke: #FF5252;
+}
+.controls {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  margin: 4px 2px;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background-color 0.3s;
+}
+button:hover {
+  background-color: #45a049;
+}
+.status {
+  font-size: 18px;
+  margin-bottom: 20px;
+}
+.panel {
+  background-color: #333;
+  border-radius: 5px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+.panel h3 {
+  margin-top: 0;
+  color: #4CAF50;
+}
+#trades {
+  list-style-type: none;
+  padding: 0;
+}
+#trades li {
+  margin-bottom: 10px;
+  padding: 5px;
+  border-radius: 3px;
+}
+#trades li.buy {
+  background-color: rgba(76, 175, 80, 0.2);
+}
+#trades li.sell {
+  background-color: rgba(255, 82, 82, 0.2);
+}
+#backtestResults {
+  display: none;
+}
+.metric {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.metric-value {
+  font-weight: bold;
+}
+</style></head><body>
+<div class="container">
+  <h1>Bot de OperaÃ§Ã£o em Futuros na Binance</h1>
+  <div class="controls">
+    <button id="startBtn">Iniciar Bot</button>
+    <button id="stopBtn">Parar Bot</button>
+    <button id="backtestBtn">Executar Backtesting</button>
+  </div>
+  <div class="status" id="status">Status: Aguardando inicializaÃ§Ã£o</div>
+  <div class="chart" id="chart">
+    <svg width="100%" height="100%" viewBox="0 0 1000 400" preserveAspectRatio="none">
+      <path class="price-line" d="M0,200 L1000,200"></path>
+      <path class="ma-short" d="M0,180 L1000,220"></path>
+      <path class="ma-long" d="M0,220 L1000,180"></path>
+      <path class="rsi-line" d="M0,350 L1000,350"></path>
+      <path class="bb-upper" d="M0,150 L1000,150"></path>
+      <path class="bb-middle" d="M0,200 L1000,200"></path>
+      <path class="bb-lower" d="M0,250 L1000,250"></path>
+    </svg>
+  </div>
+  <div class="panel">
+    <h3>PosiÃ§Ã£o Atual</h3>
+    <p id="position">Nenhuma posiÃ§Ã£o aberta</p>
+  </div>
+  <div class="panel">
+    <h3>Ãšltimas OperaÃ§Ãµes</h3>
+    <ul id="trades">
+      <li>Nenhuma operaÃ§Ã£o realizada</li>
+    </ul>
+  </div>
+  <div id="backtestResults" class="panel">
+    <h3>Resultados do Backtesting (6 meses)</h3>
+    <div class="metric">
+      <span>Taxa de acerto:</span>
+      <span id="winRate" class="metric-value">0%</span>
+    </div>
+    <div class="metric">
+      <span>Drawdown mÃ¡ximo:</span>
+      <span id="maxDrawdown" class="metric-value">0%</span>
+    </div>
+    <div class="metric">
+      <span>Retorno sobre investimento (ROI):</span>
+      <span id="roi" class="metric-value">0%</span>
+    </div>
+    <div class="metric">
+      <span>NÃºmero de trades realizados:</span>
+      <span id="totalTrades" class="metric-value">0</span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+function safelyParseFloat(value) {
+  const parsed = parseFloat(value);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+const chart = document.getElementById('chart');
+const svg = chart.querySelector('svg');
+const priceLine = svg.querySelector('.price-line');
+const maShort = svg.querySelector('.ma-short');
+const maLong = svg.querySelector('.ma-long');
+const rsiLine = svg.querySelector('.rsi-line');
+const bbUpper = svg.querySelector('.bb-upper');
+const bbMiddle = svg.querySelector('.bb-middle');
+const bbLower = svg.querySelector('.bb-lower');
+const status = document.getElementById('status');
+const position = document.getElementById('position');
+const trades = document.getElementById('trades');
+
+let isRunning = false;
+let priceData = [];
+let volumeData = [];
+let maShortData = [];
+let maLongData = [];
+let rsiData = [];
+let currentPosition = null;
+
+const BINANCE_API_URL = 'https://api.binance.com/api/v3';
+const SYMBOL = 'BTCUSDT';
+const INTERVAL = '1m';
+
+async function fetchKlines() {
+  try {
+    const response = await axios.get(`${BINANCE_API_URL}/klines`, {
+      params: {
+        symbol: SYMBOL,
+        interval: INTERVAL,
+        limit: 100
+      }
+    });
+    return response.data.map(kline => ({
+      close: safelyParseFloat(kline[4]),
+      volume: safelyParseFloat(kline[5])
+    }));
+  } catch (error) {
+    console.error('Error fetching klines:', error);
+    return [];
+  }
+}
+
+function calculateMA(data, period) {
+  return data.slice(-period).reduce((sum, price) => sum + price, 0) / period;
+}
+
+function calculateRSI(prices, period = 14) {
+  if (prices.length < period + 1) return 50;
+  let gains = 0;
+  let losses = 0;
+  for (let i = prices.length - period; i < prices.length; i++) {
+    const difference = prices[i] - prices[i - 1];
+    if (difference >= 0) {
+      gains += difference;
+    } else {
+      losses -= difference;
+    }
+  }
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+  const rs = avgLoss === 0 ? 1 : avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+function calculateBollingerBands(data, period = 20, multiplier = 2) {
+  const ma = data.slice(-period).reduce((sum, price) => sum + price, 0) / period;
+  const stdDev = Math.sqrt(data.slice(-period).reduce((sum, price) => sum + Math.pow(price - ma, 2), 0) / period);
+  return {
+    upper: ma + multiplier * stdDev,
+    middle: ma,
+    lower: ma - multiplier * stdDev
+  };
+}
+
+function isVolumeAnomaly(volumes, currentVolume, threshold = 2) {
+  const avgVolume = volumes.reduce((sum, vol) => sum + vol, 0) / volumes.length;
+  return currentVolume > avgVolume * threshold;
+}
+
+function calculateVolatility(prices, period = 14) {
+  const returns = prices.slice(1).map((price, i) => (price - prices[i]) / prices[i]);
+  const avgReturn = returns.reduce((sum, ret) => sum + ret, 0) / returns.length;
+  const squaredDiffs = returns.map(ret => Math.pow(ret - avgReturn, 2));
+  const variance = squaredDiffs.reduce((sum, diff) => sum + diff, 0) / (squaredDiffs.length - 1);
+  return Math.sqrt(variance) * Math.sqrt(252) * 100; // Annualized volatility in percentage
+}
+
+function generateSignal(price, maShort, maLong, rsi, bollingerBands, volume, avgVolume) {
+  const volumeAnomaly = volume > avgVolume * 2;
+  
+  const buySignal = maShort > maLong && 
+                    rsi < 30 && 
+                    price < bollingerBands.lower &&
+                    volumeAnomaly;
+
+  const sellSignal = maShort < maLong && 
+                     rsi > 70 && 
+                     price > bollingerBands.upper &&
+                     volumeAnomaly;
+  
+  return { buySignal, sellSignal };
+}
+
+function calculateStopLossAndTakeProfit(entryPrice, type) {
+  const stopLossPercentage = 0.02; // 2%
+  const takeProfitRatio = 2; // 1:2 risk/reward ratio
+
+  if (type === 'long') {
+    return {
+      stopLoss: entryPrice * (1 - stopLossPercentage),
+      takeProfit: entryPrice * (1 + (stopLossPercentage * takeProfitRatio))
+    };
+  } else {
+    return {
+      stopLoss: entryPrice * (1 + stopLossPercentage),
+      takeProfit: entryPrice * (1 - (stopLossPercentage * takeProfitRatio))
+    };
+  }
+}
+
+async function updateChart() {
+  if (!isRunning) return;
+
+  try {
+    const newData = await fetchKlines();
+    if (newData.length === 0) {
+      setTimeout(updateChart, 5000);
+      return;
+    }
+
+    priceData = newData.map(d => d.close);
+    volumeData = newData.map(d => d.volume);
+    const latestPrice = priceData[priceData.length - 1];
+    const latestVolume = volumeData[volumeData.length - 1];
+
+    maShortData = priceData.map((_, i, arr) => calculateMA(arr.slice(0, i + 1), 9));
+    maLongData = priceData.map((_, i, arr) => calculateMA(arr.slice(0, i + 1), 21));
+    rsiData = priceData.map((_, i, arr) => calculateRSI(arr.slice(0, i + 1)));
+    const bollingerBands = calculateBollingerBands(priceData);
+    const avgVolume = volumeData.reduce((sum, vol) => sum + vol, 0) / volumeData.length;
+    const volatility = calculateVolatility(priceData);
+
+    const maxPrice = Math.max(...priceData);
+    const minPrice = Math.min(...priceData);
+    const range = maxPrice - minPrice;
+
+    const scaleY = (price) => 300 - ((price - minPrice) / range * 280 + 10);
+    const scaleRSI = (value) => 400 - (value / 100 * 80 + 10);
+
+    priceLine.setAttribute('d', priceData.map((p, i) => `${i === 0 ? 'M' : 'L'}${i * 10},${scaleY(p)}`).join(' '));
+    maShort.setAttribute('d', maShortData.map((p, i) => `${i === 0 ? 'M' : 'L'}${i * 10},${scaleY(p)}`).join(' '));
+    maLong.setAttribute('d', maLongData.map((p, i) => `${i === 0 ? 'M' : 'L'}${i * 10},${scaleY(p)}`).join(' '));
+    rsiLine.setAttribute('d', rsiData.map((p, i) => `${i === 0 ? 'M' : 'L'}${i * 10},${scaleRSI(p)}`).join(' '));
+
+    bbUpper.setAttribute('d', priceData.map((_, i) => `${i === 0 ? 'M' : 'L'}${i * 10},${scaleY(bollingerBands.upper)}`).join(' '));
+    bbMiddle.setAttribute('d', priceData.map((_, i) => `${i === 0 ? 'M' : 'L'}${i * 10},${scaleY(bollingerBands.middle)}`).join(' '));
+    bbLower.setAttribute('d', priceData.map((_, i) => `${i === 0 ? 'M' : 'L'}${i * 10},${scaleY(bollingerBands.lower)}`).join(' '));
+
+    const maShortCurrent = maShortData[maShortData.length - 1];
+    const maLongCurrent = maLongData[maLongData.length - 1];
+    const maShortPrevious = maShortData[maShortData.length - 2];
+    const maLongPrevious = maLongData[maLongData.length - 2];
+    const rsi = rsiData[rsiData.length - 1];
+
+    const { buySignal, sellSignal } = generateSignal(
+      latestPrice,
+      maShortCurrent,
+      maLongCurrent,
+      rsi,
+      bollingerBands,
+      latestVolume,
+      avgVolume
+    );
+
+    if (buySignal && currentPosition !== 'long') {
+      const { stopLoss, takeProfit } = calculateStopLossAndTakeProfit(latestPrice, 'long');
+      updateTrades('Compra (Entrada)', latestPrice, calculateLeverage(latestPrice, volatility), stopLoss, takeProfit);
+      currentPosition = 'long';
+    } else if (sellSignal && currentPosition !== 'short') {
+      const { stopLoss, takeProfit } = calculateStopLossAndTakeProfit(latestPrice, 'short');
+      updateTrades('Venda (Entrada)', latestPrice, calculateLeverage(latestPrice, volatility), stopLoss, takeProfit);
+      currentPosition = 'short';
+    }
+
+    position.textContent = `PreÃ§o Atual: $${latestPrice.toFixed(2)} | RSI: ${rsi.toFixed(2)} | PosiÃ§Ã£o: ${currentPosition || 'Nenhuma'}`;
+
+    setTimeout(updateChart, 5000);
+  } catch (error) {
+    console.error('Error updating chart:', error);
+    setTimeout(updateChart, 5000);
+  }
+}
+
+function updateTrades(type, price, leverage, stopLoss, takeProfit) {
+  const li = document.createElement('li');
+  const currencyPair = 'BTC/USDT';
+
+  li.innerHTML = `
+    <strong>${type}</strong><br>
+    Par: ${currencyPair}<br>
+    PreÃ§o: $${price.toFixed(2)}<br>
+    Alavancagem: ${leverage}x<br>
+    Stop Loss: $${stopLoss.toFixed(2)}<br>
+    Take Profit: $${takeProfit.toFixed(2)}
+  `;
+  li.className = type.toLowerCase().includes('compra') ? 'buy' : 'sell';
+  trades.insertBefore(li, trades.firstChild);
+  if (trades.children.length > 5) {
+    trades.removeChild(trades.lastChild);
+  }
+}
+
+async function runBacktest() {
+  const backtestResults = document.getElementById('backtestResults');
+  backtestResults.style.display = 'block';
+
+  const startTime = Date.now() - 180 * 24 * 60 * 60 * 1000; // 6 months ago
+  const endTime = Date.now();
+  
+  try {
+    const response = await axios.get(`${BINANCE_API_URL}/klines`, {
+      params: {
+        symbol: SYMBOL,
+        interval: INTERVAL,
+        startTime: startTime,
+        endTime: endTime,
+        limit: 1000
+      }
+    });
+
+    const historicalPrices = response.data.map(kline => safelyParseFloat(kline[4])); // Close price
+    const historicalVolumes = response.data.map(kline => safelyParseFloat(kline[5])); // Volume
+    
+    let wins = 0;
+    let losses = 0;
+    let totalProfit = 0;
+    let maxDrawdown = 0;
+    let currentDrawdown = 0;
+    let peakBalance = 1000; // Starting balance
+    let currentBalance = 1000;
+    let position = null;
+    let entryPrice = 0;
+    let stopLoss = 0;
+    let takeProfit = 0;
+
+    for (let i = 21; i < historicalPrices.length; i++) {
+      const price = historicalPrices[i];
+      const maShort = calculateMA(historicalPrices.slice(0, i + 1), 9);
+      const maLong = calculateMA(historicalPrices.slice(0, i + 1), 21);
+      const rsi = calculateRSI(historicalPrices.slice(0, i + 1));
+      const bollingerBands = calculateBollingerBands(historicalPrices.slice(0, i + 1));
+      const volume = historicalVolumes[i];
+      const avgVolume = calculateMA(historicalVolumes.slice(0, i + 1), 20);
+      const { buySignal, sellSignal } = generateSignal(
+        price,
+        maShort,
+        maLong,
+        rsi,
+        bollingerBands,
+        volume,
+        avgVolume
+      );
+
+      if (!position && buySignal) {
+        position = 'long';
+        entryPrice = price;
+        ({ stopLoss, takeProfit } = calculateStopLossAndTakeProfit(entryPrice, 'long'));
+      } else if (!position && sellSignal) {
+        position = 'short';
+        entryPrice = price;
+        ({ stopLoss, takeProfit } = calculateStopLossAndTakeProfit(entryPrice, 'short'));
+      } else if (position === 'long' && (price >= takeProfit || price <= stopLoss)) {
+        const profit = (price - entryPrice) / entryPrice;
+        totalProfit += profit;
+        currentBalance *= (1 + profit);
+        if (profit > 0) wins++;
+        else losses++;
+        position = null;
+      } else if (position === 'short' && (price <= takeProfit || price >= stopLoss)) {
+        const profit = (entryPrice - price) / entryPrice;
+        totalProfit += profit;
+        currentBalance *= (1 + profit);
+        if (profit > 0) wins++;
+        else losses++;
+        position = null;
+      }
+
+      if (currentBalance > peakBalance) {
+        peakBalance = currentBalance;
+        currentDrawdown = 0;
+      } else {
+        currentDrawdown = (peakBalance - currentBalance) / peakBalance;
+        if (currentDrawdown > maxDrawdown) {
+          maxDrawdown = currentDrawdown;
+        }
+      }
+    }
+
+    const totalTrades = wins + losses;
+    const winRate = (totalTrades > 0) ? (wins / totalTrades) * 100 : 0;
+    const roi = ((currentBalance - 1000) / 1000) * 100;
+
+    document.getElementById('winRate').textContent = winRate.toFixed(1) + '%';
+    document.getElementById('maxDrawdown').textContent = (maxDrawdown * 100).toFixed(1) + '%';
+    document.getElementById('roi').textContent = roi.toFixed(1) + '%';
+    document.getElementById('totalTrades').textContent = totalTrades;
+
+    alert('Backtesting concluÃ­do! Verifique os resultados abaixo do grÃ¡fico.');
+  } catch (error) {
+    console.error('Error running backtest:', error);
+    alert('Erro ao executar o backtesting. Por favor, tente novamente.');
+  }
+}
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  if (!isRunning) {
+    isRunning = true;
+    status.textContent = 'Status: Bot em execuÃ§Ã£o';
+    updateChart();
+  }
+});
+
+document.getElementById('stopBtn').addEventListener('click', () => {
+  isRunning = false;
+  status.textContent = 'Status: Bot parado';
+});
+
+document.getElementById('backtestBtn').addEventListener('click', runBacktest);
+
+window.addEventListener('error', function(event) {
+  console.error('Caught unhandled error:', event.error);
+  if (event.error && event.error.message && event.error.message.includes('https://e2.wbsm.ai/api/s/identify')) {
+    console.warn('Non-critical API call failed. Continuing execution.');
+    event.preventDefault();
+  } else {
+    alert('Ocorreu um erro inesperado. Por favor, recarregue a pÃ¡gina e tente novamente.');
+  }
+});
+
+// Global error handler for unhandled promise rejections
+window.addEventListener('unhandledrejection', function(event) {
+  console.warn('Unhandled promise rejection:', event.reason);
+});
+</script>
+</body></html>
